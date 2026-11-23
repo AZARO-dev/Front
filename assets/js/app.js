@@ -23,6 +23,8 @@
   function money(n) { return (SHOP.currencySymbol || "$") + Number(n).toFixed(0); }
   function toInches(cm) { return (cm / 2.54).toFixed(1); }
   function byId(id) { for (var i = 0; i < PRODUCTS.length; i++) if (PRODUCTS[i].id === id) return PRODUCTS[i]; return null; }
+  function pageName() { var el = document.querySelector("[data-page]"); return el ? el.getAttribute("data-page") : ""; }
+  function hashId() { try { return decodeURIComponent(location.hash.slice(1)); } catch (e) { return location.hash.slice(1); } }
   function era(year) { return year < 1990 ? "80s" : year < 2000 ? "90s" : "00s"; }
 
   var CONDITION = {
@@ -191,7 +193,7 @@
   function renderHeader() {
     var el = $("#site-header");
     if (!el) return;
-    var page = document.body.getAttribute("data-page");
+    var page = pageName();
     var link = function (href, label, key) {
       return '<a href="' + href + '"' + (page === key ? ' aria-current="page"' : "") + ">" + label + "</a>";
     };
@@ -226,7 +228,7 @@
       '<p class="news-msg small" role="status" aria-live="polite"></p>' +
       "</div>" +
       '<div class="footer-links">' +
-      '<p class="mono label">Shop</p><a href="index.html">All tees</a><a href="index.html?era=90s">90s</a><a href="index.html?era=80s">80s</a><a href="cart.html">Cart</a>' +
+      '<p class="mono label">Shop</p><a href="index.html">All tees</a><a href="index.html#90s">90s</a><a href="index.html#80s">80s</a><a href="cart.html">Cart</a>' +
       "</div>" +
       '<div class="footer-links">' +
       '<p class="mono label">Help</p><a href="info.html#shipping">Shipping</a><a href="info.html#sizing">Sizing</a><a href="info.html#condition">Condition</a><a href="info.html#returns">Returns</a>' +
@@ -267,7 +269,7 @@
 
   function card(p) {
     var badge = p.sold ? '<span class="badge">Sold</span>' : p.isNew ? '<span class="badge badge-new">New</span>' : "";
-    return '<a class="card' + (p.sold ? " is-sold" : "") + '" href="product.html?id=' + encodeURIComponent(p.id) + '">' +
+    return '<a class="card' + (p.sold ? " is-sold" : "") + '" href="product.html#' + encodeURIComponent(p.id) + '">' +
       '<div class="card-media">' +
       '<div class="card-img">' + media(p, 0) + "</div>" +
       '<div class="card-img card-img-alt" aria-hidden="true">' + media(p, 1) + "</div>" +
@@ -286,14 +288,9 @@
     var grid = $("#product-grid"), bar = $("#filters");
     if (!grid || !bar) return;
 
-    var params = new URLSearchParams(location.search);
-    var state = {
-      era: params.get("era") || "all",
-      hideSold: params.get("available") === "1",
-      sort: params.get("sort") || "new",
-    };
-
     var eras = ["all", "80s", "90s", "00s"];
+    var eraFromHash = function () { var h = hashId(); return eras.indexOf(h) > 0 ? h : "all"; };
+    var state = { era: eraFromHash(), hideSold: false, sort: "new" };
     var count = function (e) { return PRODUCTS.filter(function (p) { return e === "all" || era(p.year) === e; }).length; };
 
     bar.innerHTML =
@@ -332,13 +329,13 @@
       var shown = $("#result-count");
       if (shown) shown.textContent = list.length + (list.length === 1 ? " piece" : " pieces");
 
-      var q = new URLSearchParams();
-      if (state.era !== "all") q.set("era", state.era);
-      if (state.hideSold) q.set("available", "1");
-      if (state.sort !== "new") q.set("sort", state.sort);
-      var qs = q.toString();
-      try { history.replaceState(null, "", qs ? "?" + qs : location.pathname); } catch (e) { /* file:// */ }
+      var want = state.era === "all" ? "" : state.era;
+      if (hashId() !== want) {
+        try { history.replaceState(null, "", want ? "#" + want : location.pathname + location.search); } catch (e) { /* sandboxed frame */ }
+      }
     }
+
+    window.addEventListener("hashchange", function () { state.era = eraFromHash(); sync(); });
 
     bar.addEventListener("click", function (e) {
       var b = e.target.closest("[data-era]");
@@ -363,7 +360,7 @@
   function pageProduct() {
     var root = $("#product");
     if (!root) return;
-    var id = new URLSearchParams(location.search).get("id");
+    var id = hashId() || new URLSearchParams(location.search).get("id");
     var p = byId(id);
 
     if (!p) {
@@ -379,7 +376,7 @@
 
     root.innerHTML =
       '<div class="wrap">' +
-      '<nav class="crumbs mono" aria-label="Breadcrumb"><a href="index.html">Shop</a> / <a href="index.html?era=' + era(p.year) + '">' + era(p.year) + "</a> / <span>" + esc(p.title) + "</span></nav>" +
+      '<nav class="crumbs mono" aria-label="Breadcrumb"><a href="index.html">Shop</a> / <a href="index.html#' + era(p.year) + '">' + era(p.year) + "</a> / <span>" + esc(p.title) + "</span></nav>" +
       '<div class="pdp">' +
       '<div class="gallery">' + gallery + "</div>" +
       '<aside class="pdp-info">' +
@@ -427,6 +424,11 @@
     $("#related").innerHTML = related.map(card).join("");
   }
 
+  function pageProductRouted() {
+    pageProduct();
+    window.addEventListener("hashchange", function () { pageProduct(); window.scrollTo(0, 0); });
+  }
+
   function pageCart() {
     var root = $("#cart");
     if (!root) return;
@@ -451,9 +453,9 @@
         '<ul class="cart-list">' +
         items.map(function (p) {
           return '<li class="cart-item' + (p.sold ? " is-sold" : "") + '">' +
-            '<a class="cart-thumb" href="product.html?id=' + encodeURIComponent(p.id) + '">' + media(p, 0) + "</a>" +
+            '<a class="cart-thumb" href="product.html#' + encodeURIComponent(p.id) + '">' + media(p, 0) + "</a>" +
             '<div class="cart-desc">' +
-            '<a class="cart-title" href="product.html?id=' + encodeURIComponent(p.id) + '">' + esc(p.title) + "</a>" +
+            '<a class="cart-title" href="product.html#' + encodeURIComponent(p.id) + '">' + esc(p.title) + "</a>" +
             '<p class="mono small">' + esc(p.year) + " · Size " + esc(p.size) + "<br>" + p.pit + " × " + p.length + " cm</p>" +
             (p.sold ? '<p class="small warn">Sorry — this piece has just sold.</p>' : "") +
             '<button type="button" class="link-btn small" data-remove="' + esc(p.id) + '">Remove</button>' +
@@ -502,9 +504,9 @@
   document.addEventListener("DOMContentLoaded", function () {
     renderHeader();
     renderFooter();
-    var page = document.body.getAttribute("data-page");
+    var page = pageName();
     if (page === "shop") pageShop();
-    if (page === "product") pageProduct();
+    if (page === "product") pageProductRouted();
     if (page === "cart") pageCart();
     updateCartCount();
     // keep tabs in sync
